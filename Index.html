@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+    <title>Mobile FAP Builder</title>
+    <style>
+        :root {
+            --bg-color: #000000;
+            --card-bg: #1C1C1E;
+            --primary: #0A84FF;
+            --text: #FFFFFF;
+        }
+
+        * {
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            margin: 0;
+            padding: 10px;
+            font-family: -apple-system, system-ui, "SF Pro", sans-serif;
+            background: var(--bg-color);
+            color: var(--text);
+        }
+
+        .container {
+            max-width: 100%;
+            margin: 0 auto;
+            padding: 10px;
+        }
+
+        h1 {
+            font-size: 24px;
+            margin: 0 0 20px 0;
+        }
+
+        .input-group {
+            margin-bottom: 15px;
+        }
+
+        input, select, textarea {
+            width: 100%;
+            padding: 12px;
+            margin: 5px 0;
+            border: none;
+            border-radius: 10px;
+            background: var(--card-bg);
+            color: var(--text);
+            font-size: 16px;
+            font-family: -apple-system, system-ui, "SF Pro", sans-serif;
+        }
+
+        textarea {
+            height: 300px;
+            font-family: "SF Mono", Menlo, monospace;
+            line-height: 1.4;
+            resize: vertical;
+        }
+
+        button {
+            width: 100%;
+            padding: 15px;
+            border: none;
+            border-radius: 10px;
+            background: var(--primary);
+            color: var(--text);
+            font-size: 16px;
+            font-weight: 500;
+            margin-top: 10px;
+            cursor: pointer;
+        }
+
+        button:disabled {
+            opacity: 0.6;
+        }
+
+        .status {
+            margin-top: 10px;
+            padding: 12px;
+            border-radius: 10px;
+            display: none;
+        }
+
+        .status.error {
+            background: #FF453A;
+            display: block;
+        }
+
+        .status.success {
+            background: #32D74B;
+            display: block;
+        }
+
+        .code-preview {
+            background: var(--card-bg);
+            padding: 15px;
+            border-radius: 10px;
+            overflow-x: auto;
+            white-space: pre;
+            font-family: "SF Mono", Menlo, monospace;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Mobile FAP Builder</h1>
+        
+        <div class="input-group">
+            <input type="text" id="appName" placeholder="Application Name" value="MyApp">
+        </div>
+
+        <div class="input-group">
+            <select id="template" onchange="loadTemplate()">
+                <option value="basic">Basic App</option>
+                <option value="gpio">GPIO Example</option>
+                <option value="subghz">Sub-GHz Example</option>
+                <option value="ir">Infrared Example</option>
+                <option value="nfc">NFC Example</option>
+                <option value="gui">GUI Example</option>
+            </select>
+        </div>
+
+        <div class="input-group">
+            <textarea id="codeEditor" spellcheck="false"></textarea>
+        </div>
+
+        <div id="status" class="status"></div>
+        
+        <button id="downloadButton" onclick="generateFiles()">Generate Files</button>
+    </div>
+
+    <script>
+const templates = {
+    basic: `#include <furi.h>
+#include <furi_hal.h>
+
+int32_t app_main(void* p) {
+    UNUSED(p);
+    // Your code here
+    return 0;
+}`,
+    gpio: `#include <furi.h>
+#include <furi_hal.h>
+
+int32_t app_main(void* p) {
+    UNUSED(p);
+    
+    // Configure GPIO pin
+    furi_hal_gpio_init_simple(&gpio_ext_pa7, GpioModeOutputPushPull);
+    
+    // Blink LED
+    while(1) {
+        furi_hal_gpio_write(&gpio_ext_pa7, true);
+        furi_delay_ms(500);
+        furi_hal_gpio_write(&gpio_ext_pa7, false);
+        furi_delay_ms(500);
+    }
+    
+    return 0;
+}`,
+    gui: `#include <furi.h>
+#include <gui/gui.h>
+#include <gui/elements.h>
+
+static void app_draw_callback(Canvas* canvas, void* ctx) {
+    UNUSED(ctx);
+    
+    canvas_clear(canvas);
+    canvas_set_font(canvas, FontPrimary);
+    canvas_draw_str(canvas, 2, 10, "Hello Flipper!");
+}
+
+int32_t app_main(void* p) {
+    UNUSED(p);
+    
+    // Configure view port
+    ViewPort* view_port = view_port_alloc();
+    view_port_draw_callback_set(view_port, app_draw_callback, NULL);
+    
+    // Register view port in GUI
+    Gui* gui = furi_record_open(RECORD_GUI);
+    gui_add_view_port(gui, view_port, GuiLayerFullscreen);
+    
+    // Wait until back button is pressed
+    while(1) {
+        furi_delay_ms(100);
+    }
+    
+    view_port_enabled_set(view_port, false);
+    gui_remove_view_port(gui, view_port);
+    view_port_free(view_port);
+    furi_record_close(RECORD_GUI);
+    
+    return 0;
+}`,
+    subghz: `#include <furi.h>
+#include <furi_hal.h>
+
+int32_t app_main(void* p) {
+    UNUSED(p);
+    
+    // Initialize Sub-GHz
+    furi_hal_subghz_init();
+    
+    // Set frequency to 433.92 MHz
+    furi_hal_subghz_set_frequency(433920000);
+    
+    // Your Sub-GHz code here
+    
+    furi_hal_subghz_sleep();
+    return 0;
+}`
+};
+
+function loadTemplate() {
+    const template = document.getElementById('template').value;
+    document.getElementById('codeEditor').value = templates[template];
+}
+
+function generateFAM(appName) {
+    return `App(
+    appid="${appName.toLowerCase()}",
+    name="${appName}",
+    apptype=FlipperAppType.EXTERNAL,
+    entry_point="app_main",
+    stack_size=2 * 1024,
+    fap_category="Examples",
+    fap_version="1.0",
+    fap_icon="A_T_D_14"
+)`;
+}
+
+function generateFiles() {
+    const appName = document.getElementById('appName').value;
+    const sourceCode = document.getElementById('codeEditor').value;
+    const famContent = generateFAM(appName);
+    
+    // Create ZIP file
+    const zip = new JSZip();
+    
+    // Add source files
+    zip.file(`${appName}.c`, sourceCode);
+    zip.file('application.fam', famContent);
+    
+    // Add build instructions
+    zip.file('README.md', generateReadme(appName));
+    
+    // Generate and download ZIP
+    zip.generateAsync({type: "blob"})
+        .then(function(content) {
+            const url = window.URL.createObjectURL(content);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${appName}-source.zip`;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+            
+            showStatus('Files generated successfully!', 'success');
+        });
+}
+
+function generateReadme(appName) {
+    return `# ${appName}
+
+## Building
+
+1. Clone the Flipper Zero firmware
+\`\`\`bash
+git clone https://github.com/flipperdevices/flipperzero-firmware.git
+\`\`\`
+
+2. Copy these files to applications_user/${appName}
+
+3. Build the FAP:
+\`\`\`bash
+./fbt fap_${appName}
+\`\`\`
+
+The FAP file will be at:
+\`build/f7-firmware-D/.apps/${appName}.fap\`
+`;
+}
+
+function showStatus(message, type) {
+    const status = document.getElementById('status');
+    status.textContent = message;
+    status.className = `status ${type}`;
+    setTimeout(() => {
+        status.style.display = 'none';
+    }, 3000);
+}
+
+// Load default template
+loadTemplate();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.7.1/jszip.min.js"></script>
+</body>
+</html>
