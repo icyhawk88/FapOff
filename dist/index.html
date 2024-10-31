@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+    <title>Flipper FAP Builder</title>
+    <style>
+        :root {
+            --bg-color: #000000;
+            --card-bg: #1C1C1E;
+            --primary: #0A84FF;
+            --text: #FFFFFF;
+            --error: #FF453A;
+            --success: #32D74B;
+        }
+
+        body {
+            margin: 0;
+            padding: 15px;
+            font-family: -apple-system, system-ui, "SF Pro", sans-serif;
+            background: var(--bg-color);
+            color: var(--text);
+        }
+
+        .container {
+            max-width: 100%;
+            margin: 0 auto;
+        }
+
+        .card {
+            background: var(--card-bg);
+            border-radius: 12px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+
+        input, select, textarea {
+            width: 100%;
+            padding: 12px;
+            margin: 5px 0;
+            background: #2C2C2E;
+            border: none;
+            border-radius: 8px;
+            color: var(--text);
+            font-size: 16px;
+        }
+
+        textarea {
+            height: 300px;
+            font-family: "SF Mono", Menlo, monospace;
+            line-height: 1.4;
+            resize: vertical;
+            tab-size: 4;
+        }
+
+        button {
+            width: 100%;
+            padding: 15px;
+            border: none;
+            border-radius: 8px;
+            background: var(--primary);
+            color: var(--text);
+            font-size: 16px;
+            font-weight: 500;
+            margin-top: 10px;
+        }
+
+        button:disabled {
+            opacity: 0.6;
+        }
+
+        .status {
+            padding: 12px;
+            border-radius: 8px;
+            margin-top: 10px;
+            display: none;
+        }
+
+        .error { background: var(--error); }
+        .success { background: var(--success); }
+
+        .build-progress {
+            height: 4px;
+            background: #2C2C2E;
+            border-radius: 2px;
+            margin: 10px 0;
+            overflow: hidden;
+        }
+
+        .progress-bar {
+            height: 100%;
+            background: var(--primary);
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+
+        .loader {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 2px solid var(--text);
+            border-radius: 50%;
+            border-top-color: transparent;
+            animation: spin 1s linear infinite;
+            margin-right: 8px;
+            vertical-align: middle;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="card">
+            <h2>Flipper FAP Builder</h2>
+            <p>Build FAP files directly in your browser</p>
+        </div>
+
+        <div class="card">
+            <input type="text" id="appName" placeholder="Application Name" value="MyApp">
+            <select id="template" onchange="loadTemplate()">
+                <option value="basic">Basic Application</option>
+                <option value="gpio">GPIO Example</option>
+                <option value="subghz">Sub-GHz Example</option>
+                <option value="gui">GUI Example</option>
+            </select>
+        </div>
+
+        <div class="card">
+            <textarea id="editor" spellcheck="false"></textarea>
+        </div>
+
+        <div class="build-progress">
+            <div class="progress-bar" id="progress"></div>
+        </div>
+
+        <div id="status" class="status"></div>
+
+        <button id="buildButton" onclick="buildFAP()">Build FAP</button>
+    </div>
+
+    <script src="flipper-toolchain.js"></script>
+    <script>
+        let wasmModule;
+        let builder;
+
+        const templates = {
+            basic: `#include <furi.h>
+#include <furi_hal.h>
+
+int32_t app_main(void* p) {
+    UNUSED(p);
+    // Your code here
+    return 0;
+}`,
+            gpio: `#include <furi.h>
+#include <furi_hal.h>
+
+int32_t app_main(void* p) {
+    UNUSED(p);
+    
+    // Configure GPIO
+    furi_hal_gpio_init_simple(&gpio_ext_pa7, GpioModeOutputPushPull);
+    
+    // Blink LED
+    while(1) {
+        furi_hal_gpio_write(&gpio_ext_pa7, true);
+        furi_delay_ms(500);
+        furi_hal_gpio_write(&gpio_ext_pa7, false);
+        furi_delay_ms(500);
+    }
+    
+    return 0;
+}`
+            // Add more templates...
+        };
+
+        async function initWasm() {
+            try {
+                wasmModule = await FlipperModule();
+                builder = new wasmModule.FlipperBuilder();
+                document.getElementById('buildButton').disabled = false;
+                showStatus('Builder ready!', 'success');
+            } catch (error) {
+                showStatus('Failed to initialize builder: ' + error, 'error');
+            }
+        }
+
+        function loadTemplate() {
+            const template = document.getElementById('template').value;
+            document.getElementById('editor').value = templates[template];
+        }
+
+        async function buildFAP() {
+            const buildButton = document.getElementById('buildButton');
+            const progress = document.getElementById('progress');
+            
+            try {
+                buildButton.disabled = true;
+                showStatus('<span class="loader"></span>Building FAP...', 'info');
+                
+                const appName = document.getElementById('appName').value;
+                const sourceCode = document.getElementById('editor').value;
+
+                // Update progress
+                progress.style.width = '50%';
+
+                // Build FAP
+                const fapData = await builder.buildFAP(sourceCode, appName);
+
+                // Create download
+                const blob = new Blob([fapData], { type: 'application/octet-stream' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `${appName}.fap`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+
+                progress.style.width = '100%';
+                showStatus('FAP built successfully!', 'success');
+            } catch (error) {
+                showStatus('Build failed: ' + error.message, 'error');
+            } finally {
+                buildButton.disabled = false;
+                setTimeout(() => {
+                    progress.style.width = '0%';
+                }, 1000);
+            }
+        }
+
+        function showStatus(message, type) {
+            const status = document.getElementById('status');
+            status.innerHTML = message;
+            status.className = `status ${type}`;
+            status.style.display = 'block';
+        }
+
+        // Initialize
+        window.addEventListener('load', () => {
+            initWasm();
+            loadTemplate();
+        });
+    </script>
+</body>
+</html>

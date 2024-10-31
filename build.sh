@@ -1,5 +1,17 @@
 #!/bin/bash
-# build-wasm.sh
+
+# Create project structure
+mkdir -p src sdk
+
+# Clone SDK if not present
+if [ ! -d "sdk/flipper-sdk" ]; then
+    cd sdk
+    git clone --depth 1 https://github.com/flipperdevices/flipperzero-firmware.git flipper-sdk
+    cd ..
+fi
+
+# Set SDK path for compiler
+export SDK_PATH="$(pwd)/sdk/flipper-sdk"
 
 # Install emscripten if not present
 if ! command -v emcc &> /dev/null; then
@@ -18,10 +30,9 @@ emcc src/toolchain.cpp \
     -s EXPORTED_FUNCTIONS='["_malloc", "_free"]' \
     -s ALLOW_MEMORY_GROWTH=1 \
     -s MAXIMUM_MEMORY=512MB \
+    -I"./sdk/flipper-sdk/firmware/targets/f7/inc" \
+    -I"./sdk/flipper-sdk/firmware/targets/furi_hal_include" \
     -O3 \
-    -o flipper-toolchain.js
+    -o dist/flipper-toolchain.js
 
-# Copy files to dist
-mkdir -p dist
-cp flipper-toolchain.{js,wasm} dist/
-cp index.html dist/
+echo "Build complete! Check dist/ directory for output files."
